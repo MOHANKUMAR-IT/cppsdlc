@@ -1,0 +1,62 @@
+# Build directories
+build/
+out/
+bin/
+lib/
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+_deps/
+
+# vcpkg
+vcpkg_installed/
+.vcpkg-root
+
+# IDE specific
+.vs/
+.vscode/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+.idea/
+*.iml
+
+# OS specific
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Package manager
+conan/
+.conan/
+
+# Test results
+Testing/
+test_results/
+*.xml
+
+# Coverage
+*.gcov
+*.gcda
+*.gcno
+coverage/
+
+# Documentation build
+docs/html/
+docs/latex/

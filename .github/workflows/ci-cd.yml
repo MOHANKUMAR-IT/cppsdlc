@@ -1,0 +1,192 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  release:
+    types: [ created, published ]
+
+permissions:
+  contents: write
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # ============================================================================
+  # Build and Test Job
+  # ============================================================================
+  build-and-test:
+    name: Build and Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            triplet: x64-linux
+            vcpkg_root: /usr/local/share/vcpkg
+          - os: windows-latest
+            triplet: x64-windows
+            vcpkg_root: C:\vcpkg
+          - os: macos-latest
+            triplet: x64-osx
+            vcpkg_root: /usr/local/share/vcpkg
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup CMake
+      uses: lukka/get-cmake@latest
+    
+    - name: Configure Git for private registry
+      run: |
+        git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+    
+    - name: Install vcpkg
+      run: |
+        git clone https://github.com/microsoft/vcpkg.git
+        cd vcpkg
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          ./bootstrap-vcpkg.bat
+        else
+          ./bootstrap-vcpkg.sh
+        fi
+      shell: bash
+    
+    - name: Configure CMake
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DBUILD_TESTS=ON
+      shell: bash
+    
+    - name: Build
+      run: cmake --build build --config ${{ env.BUILD_TYPE }}
+    
+    - name: Run Tests
+      working-directory: build
+      run: ctest -C ${{ env.BUILD_TYPE }} --output-on-failure
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: matrix.os == 'ubuntu-latest'
+      with:
+        name: build-artifacts-${{ matrix.os }}
+        path: |
+          build/bin/
+          build/lib/
+
+  # ============================================================================
+  # Code Quality Job
+  # ============================================================================
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format clang-tidy cppcheck
+    
+    - name: Check code formatting
+      continue-on-error: true
+      run: |
+        find src include tests -name '*.cpp' -o -name '*.h' | \
+        xargs clang-format --dry-run --Werror
+    
+    - name: Run cppcheck
+      continue-on-error: true
+      run: |
+        cppcheck --enable=all --error-exitcode=1 \
+          --suppress=missingInclude \
+          --inline-suppr \
+          src/ include/
+
+  # ============================================================================
+  # Documentation Job
+  # ============================================================================
+  documentation:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install Doxygen
+      run: sudo apt-get install -y doxygen graphviz
+    
+    - name: Generate documentation
+      run: doxygen Doxyfile || echo "No Doxyfile found, skipping"
+    
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      if: github.event_name == 'push'
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs/html
+
+  # ============================================================================
+  # Release Job
+  # ============================================================================
+  release:
+    name: Create Release Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: [build-and-test, code-quality]
+    if: github.event_name == 'release'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            package_ext: tar.gz
+            cpack_generator: TGZ
+          - os: windows-latest
+            package_ext: zip
+            cpack_generator: ZIP
+          - os: macos-latest
+            package_ext: tar.gz
+            cpack_generator: TGZ
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup CMake
+      uses: lukka/get-cmake@latest
+    
+    - name: Install build tools (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: sudo apt-get update && sudo apt-get install -y build-essential cmake
+
+    - name: Install vcpkg
+      run: |
+        git clone https://github.com/microsoft/vcpkg.git
+        cd vcpkg
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          ./bootstrap-vcpkg.bat
+        else
+          ./bootstrap-vcpkg.sh
+        fi
+      shell: bash
+    
+    - name: Build Release Package
+      run: |
+        cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake
+        cmake --build build --config Release
+        cd build
+        cpack -G ${{ matrix.cpack_generator }}
+      shell: bash
+    
+    - name: Upload Release Assets
+      uses: softprops/action-gh-release@v2
+      with:
+        files: build/*.${{ matrix.package_ext }}
+        token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "myapp",
+  "version": "1.0.0",
+  "description": "Sample C++ application demonstrating SDLC best practices",
+  "homepage": "https://github.com/yourorg/cppsdlc",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "fmt",
+      "version>=": "12.1.0"
+    },
+    {
+      "name": "jsoncpp",
+      "version>=": "1.9.6"
+    },
+    {
+      "name": "gtest",
+      "version>=": "1.17.0"
+    }
+  ],
+  "overrides": []
+}
